@@ -1,0 +1,301 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>UHST File Transfer Example with Chunking</title>
+    <meta name="description" content="Example showing how to use UHST to send files from client to host with chunking.">
+    <meta name="author" content="Your Name">
+    <!-- Include Bootstrap CSS if needed -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        /* Optional styling for better appearance */
+        .container {
+            margin-top: 20px;
+        }
+
+        #qrcode,
+        #linkSection {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #copyButton {
+            margin-left: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <main role="main">
+
+        <!-- Main container -->
+        <div class="container">
+            <h1 class="display-3">UHST File Transfer with Chunking</h1>
+            <p>This example allows clients to send files to the host using UHST with file chunking.</p>
+
+            <!-- Host section -->
+            <div id="hostSection">
+                <h2>Host</h2>
+                <p>Host ID: <b id="hostId"></b></p>
+                <div id="qrcode"></div>
+                <div id="linkSection">
+                    <p>Or share this link:</p>
+                    <a href="#" id="appLink" target="_blank"></a>
+                    <button id="copyButton" class="btn btn-primary btn-sm">Copy URL</button>
+                </div>
+                <p>Host Status:</p>
+                <pre id="hostStatus"></pre>
+            </div>
+
+            <!-- Client section -->
+            <div id="clientSection" style="display:none;">
+                <h2>Client</h2>
+                <p>Select a file to send to the host:</p>
+                <input type="file" id="fileInput">
+                <button onclick="sendFile()" class="btn btn-primary">Send File</button>
+                <p>Client Status:</p>
+                <pre id="clientStatus"></pre>
+            </div>
+
+        </div> <!-- /container -->
+
+    </main>
+
+    <!-- Include UHST library -->
+    <script crossorigin src="https://unpkg.com/uhst/uhst.min.js"></script>
+    <!-- Include QRCode.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        // Initialize variables
+        var hostStatusEl = document.getElementById("hostStatus");
+        var clientStatusEl = document.getElementById("clientStatus");
+        var hostIdEl = document.getElementById("hostId");
+        var qrcodeEl = document.getElementById("qrcode");
+        var appLinkEl = document.getElementById("appLink");
+        var copyButtonEl = document.getElementById("copyButton");
+
+        var uhstApi = new uhst.UHST({
+            debug: true
+        });
+
+        // Function to get URL parameter
+        function getParameterByName(name, url = window.location.href) {
+            name = name.replace(/[\\[]]/g, '\\$&');
+            var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, ' '));
+        }
+
+        // Check if hostId is present in URL
+        var hostIdFromUrl = getParameterByName('hostId');
+
+        if (hostIdFromUrl) {
+            // This is the client
+            document.getElementById('hostSection').style.display = 'none';
+            document.getElementById('clientSection').style.display = 'block';
+            clientStatusEl.innerText += 'Ready to send file to host ' + hostIdFromUrl + '\n';
+        } else {
+            // This is the host
+            document.getElementById('hostSection').style.display = 'block';
+            document.getElementById('clientSection').style.display = 'none';
+
+            // Host Script
+            var host = uhstApi.host();
+            hostStatusEl.innerText += "Initializing Host...\n";
+            host.on("ready", () => {
+                hostStatusEl.innerText += "Ready.\n";
+                hostIdEl.innerText = host.hostId;
+
+                // Generate QR code with app URL and hostId
+                var appUrl = window.location.href.split('?')[0]; // Get current URL without parameters
+                var qrUrl = appUrl + '?hostId=' + host.hostId;
+
+                // Display the link under the QR code
+                appLinkEl.href = qrUrl;
+                appLinkEl.innerText = qrUrl;
+
+                // Generate the QR code
+                new QRCode(qrcodeEl, {
+                    text: qrUrl,
+                    width: 256,
+                    height: 256
+                });
+
+                // Copy URL functionality with fallback
+                copyButtonEl.addEventListener('click', function () {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        // Modern asynchronous clipboard API
+                        navigator.clipboard.writeText(qrUrl).then(function () {
+                            alert('URL copied to clipboard!');
+                        }, function (err) {
+                            alert('Failed to copy URL: ' + err);
+                        });
+                    } else {
+                        // Fallback to older execCommand method
+                        var textArea = document.createElement('textarea');
+                        textArea.value = qrUrl;
+                        // Avoid scrolling to bottom
+                        textArea.style.top = '0';
+                        textArea.style.left = '0';
+                        textArea.style.position = 'fixed';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        try {
+                            var successful = document.execCommand('copy');
+                            if (successful) {
+                                alert('URL copied to clipboard!');
+                            } else {
+                                alert('Failed to copy URL using fallback method.');
+                            }
+                        } catch (err) {
+                            alert('Failed to copy URL: ' + err);
+                        }
+                        document.body.removeChild(textArea);
+                    }
+                });
+            });
+
+            // Host variables for file reconstruction
+            var receivedChunks = {};
+            var totalChunks = {};
+            var fileMetadata = {};
+            var receivedChunkCount = {};
+
+            host.on("connection", function connection(ws) {
+                hostStatusEl.innerText += "Host received client connection.\n";
+                ws.on("open", function open() {
+                    hostStatusEl.innerText += "Host ready to receive file.\n";
+                });
+                ws.on("message", function incoming(message) {
+                    var message = JSON.parse(message);
+                    if (message.type === 'file-metadata') {
+                        // Initialize data structures
+                        receivedChunks[message.fileId] = [];
+                        totalChunks[message.fileId] = message.totalChunks;
+                        fileMetadata[message.fileId] = message;
+                        receivedChunkCount[message.fileId] = 0;
+                        hostStatusEl.innerText += "Receiving file " + message.fileName + " (" + message.totalChunks + " chunks)\n";
+                    } else if (message.type === 'file-chunk') {
+                        var chunkArray = message.chunkData;
+                        var uint8Array = new Uint8Array(chunkArray);
+                        receivedChunks[message.fileId][message.chunkIndex] = uint8Array;
+                        receivedChunkCount[message.fileId]++;
+                        hostStatusEl.innerText += "Received chunk " + (message.chunkIndex + 1) + "/" + totalChunks[message.fileId] + "\n";
+
+                        // Check if all chunks are received
+                        if (receivedChunkCount[message.fileId] === totalChunks[message.fileId]) {
+                            // Reconstruct the file
+                            var allChunksReceived = true;
+                            for (var i = 0; i < totalChunks[message.fileId]; i++) {
+                                if (!receivedChunks[message.fileId][i]) {
+                                    allChunksReceived = false;
+                                    break;
+                                }
+                            }
+                            if (allChunksReceived) {
+                                var blob = new Blob(receivedChunks[message.fileId], { type: fileMetadata[message.fileId].fileType });
+                                var link = document.createElement('a');
+                                link.href = URL.createObjectURL(blob);
+                                link.download = fileMetadata[message.fileId].fileName;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                hostStatusEl.innerText += "File " + fileMetadata[message.fileId].fileName + " received and ready to download.\n";
+                                // Clean up
+                                delete receivedChunks[message.fileId];
+                                delete totalChunks[message.fileId];
+                                delete fileMetadata[message.fileId];
+                                delete receivedChunkCount[message.fileId];
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        // Client Script
+        function sendFile() {
+            if (!hostIdFromUrl) {
+                alert('No hostId specified in URL');
+                return;
+            }
+            var fileInput = document.getElementById('fileInput');
+            if (fileInput.files.length === 0) {
+                alert('Please select a file to send');
+                return;
+            }
+            var file = fileInput.files[0];
+            var chunkSize = 16 * 1024; // 16 KB per chunk
+            var totalChunks = Math.ceil(file.size / chunkSize);
+            var fileId = Math.random().toString(36).substring(2);
+
+            // Connect to host
+            clientStatusEl.innerText += 'Connecting to host ' + hostIdFromUrl + '...\n';
+            var client = uhstApi.join(hostIdFromUrl);
+
+            client.on('open', function () {
+                clientStatusEl.innerText += 'Connected to host.\n';
+
+                // Send file metadata
+                var metadataMessage = {
+                    type: 'file-metadata',
+                    fileId: fileId,
+                    fileName: file.name,
+                    fileType: file.type,
+                    fileSize: file.size,
+                    totalChunks: totalChunks
+                };
+                client.send(JSON.stringify(metadataMessage));
+
+                // Start sending chunks
+                var offset = 0;
+                var chunkIndex = 0;
+                var reader = new FileReader();
+
+                reader.onload = function (event) {
+                    var chunkData = event.target.result; // This is an ArrayBuffer
+                    var uint8Array = new Uint8Array(chunkData);
+                    var chunkArray = Array.from(uint8Array);
+
+                    var chunkMessage = {
+                        type: 'file-chunk',
+                        fileId: fileId,
+                        chunkIndex: chunkIndex,
+                        chunkData: chunkArray
+                    };
+                    client.send(JSON.stringify(chunkMessage));
+                    clientStatusEl.innerText += 'Sent chunk ' + (chunkIndex + 1) + '/' + totalChunks + '\n';
+
+                    chunkIndex++;
+                    offset += chunkSize;
+                    if (offset < file.size) {
+                        readNextChunk();
+                    } else {
+                        clientStatusEl.innerText += 'File sent successfully.\n';
+                        client.close();
+                    }
+                };
+
+                function readNextChunk() {
+                    var blob = file.slice(offset, offset + chunkSize);
+                    reader.readAsArrayBuffer(blob);
+                }
+
+                // Start reading the first chunk
+                readNextChunk();
+            });
+
+            client.on('error', function (error) {
+                clientStatusEl.innerText += 'Error: ' + error + '\n';
+            });
+        }
+    </script>
+</body>
+
+</html>
