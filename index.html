@@ -24,6 +24,27 @@
         #copyButton {
             margin-left: 10px;
         }
+
+        .progress {
+            margin: 10px 0;
+        }
+
+        .transfer-stats {
+            font-size: 0.9em;
+            color: #666;
+            margin: 5px 0;
+        }
+
+        .status-textarea {
+            width: 100%;
+            height: 150px;
+            font-family: monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            margin-top: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
     </style>
 </head>
 
@@ -45,8 +66,14 @@
                     <a href="#" id="appLink" target="_blank"></a>
                     <button id="copyButton" class="btn btn-primary btn-sm">Copy URL</button>
                 </div>
+                <div id="hostTransferProgress" style="display:none;">
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="transfer-stats"></div>
+                </div>
                 <p>Host Status:</p>
-                <pre id="hostStatus"></pre>
+                <textarea id="hostStatus" class="status-textarea" readonly></textarea>
             </div>
 
             <!-- Client section -->
@@ -55,8 +82,14 @@
                 <p>Select a file to send to the host:</p>
                 <input type="file" id="fileInput">
                 <button onclick="sendFile()" class="btn btn-primary">Send File</button>
+                <div id="clientTransferProgress" style="display:none;">
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="transfer-stats"></div>
+                </div>
                 <p>Client Status:</p>
-                <pre id="clientStatus"></pre>
+                <textarea id="clientStatus" class="status-textarea" readonly></textarea>
             </div>
 
         </div> <!-- /container -->
@@ -98,7 +131,7 @@
             // This is the client
             document.getElementById('hostSection').style.display = 'none';
             document.getElementById('clientSection').style.display = 'block';
-            clientStatusEl.innerText += 'Ready to send file to host ' + hostIdFromUrl + '\n';
+            appendClientStatus('Ready to send file to host ' + hostIdFromUrl);
         } else {
             // This is the host
             document.getElementById('hostSection').style.display = 'block';
@@ -106,9 +139,9 @@
 
             // Host Script
             var host = uhstApi.host();
-            hostStatusEl.innerText += "Initializing Host...\n";
+            appendHostStatus("Initializing Host...");
             host.on("ready", () => {
-                hostStatusEl.innerText += "Ready.\n";
+                appendHostStatus("Ready.");
                 hostIdEl.innerText = host.hostId;
 
                 // Generate QR code with app URL and hostId
@@ -168,25 +201,47 @@
             var receivedChunkCount = {};
 
             host.on("connection", function connection(ws) {
-                hostStatusEl.innerText += "Host received client connection.\n";
+                appendHostStatus("Host received client connection.");
                 ws.on("open", function open() {
-                    hostStatusEl.innerText += "Host ready to receive file.\n";
+                    appendHostStatus("Host ready to receive file.");
                 });
+                let startTime;
+                let receivedBytes = 0;
+                let progressBar = document.querySelector('#hostTransferProgress .progress-bar');
+                let statsDiv = document.querySelector('#hostTransferProgress .transfer-stats');
+
                 ws.on("message", function incoming(message) {
                     var message = JSON.parse(message);
                     if (message.type === 'file-metadata') {
+                        document.getElementById('hostTransferProgress').style.display = 'block';
+                        startTime = Date.now();
                         // Initialize data structures
                         receivedChunks[message.fileId] = [];
                         totalChunks[message.fileId] = message.totalChunks;
                         fileMetadata[message.fileId] = message;
                         receivedChunkCount[message.fileId] = 0;
-                        hostStatusEl.innerText += "Receiving file " + message.fileName + " (" + message.totalChunks + " chunks)\n";
+                        appendHostStatus("Receiving file " + message.fileName + " (" + message.totalChunks + " chunks)");
                     } else if (message.type === 'file-chunk') {
                         var chunkArray = message.chunkData;
                         var uint8Array = new Uint8Array(chunkArray);
                         receivedChunks[message.fileId][message.chunkIndex] = uint8Array;
                         receivedChunkCount[message.fileId]++;
-                        hostStatusEl.innerText += "Received chunk " + (message.chunkIndex + 1) + "/" + totalChunks[message.fileId] + "\n";
+                        appendHostStatus("Received chunk " + (message.chunkIndex + 1) + "/" + totalChunks[message.fileId]);
+
+                        receivedBytes += message.chunkData.length;
+                        const progress = (receivedChunkCount[message.fileId] + 1) / totalChunks[message.fileId] * 100;
+                        const elapsedTime = (Date.now() - startTime) / 1000;
+                        const speed = receivedBytes / elapsedTime;
+                        const remainingBytes = fileMetadata[message.fileId].fileSize - receivedBytes;
+                        const estimatedTimeRemaining = remainingBytes / speed;
+
+                        progressBar.style.width = `${progress}%`;
+                        statsDiv.innerHTML = `
+                            Received: ${formatBytes(receivedBytes)} / ${formatBytes(fileMetadata[message.fileId].fileSize)}<br>
+                            Speed: ${formatBytes(speed)}/s<br>
+                            Elapsed: ${formatTime(elapsedTime)}<br>
+                            Remaining: ${formatTime(estimatedTimeRemaining)}
+                        `;
 
                         // Check if all chunks are received
                         if (receivedChunkCount[message.fileId] === totalChunks[message.fileId]) {
@@ -206,7 +261,7 @@
                                 document.body.appendChild(link);
                                 link.click();
                                 document.body.removeChild(link);
-                                hostStatusEl.innerText += "File " + fileMetadata[message.fileId].fileName + " received and ready to download.\n";
+                                appendHostStatus("File " + fileMetadata[message.fileId].fileName + " received and ready to download.");
                                 // Clean up
                                 delete receivedChunks[message.fileId];
                                 delete totalChunks[message.fileId];
@@ -236,11 +291,18 @@
             var fileId = Math.random().toString(36).substring(2);
 
             // Connect to host
-            clientStatusEl.innerText += 'Connecting to host ' + hostIdFromUrl + '...\n';
+            appendClientStatus('Connecting to host ' + hostIdFromUrl + '...');
             var client = uhstApi.join(hostIdFromUrl);
 
+            let startTime;
+            let sentBytes = 0;
+            let progressBar = document.querySelector('#clientTransferProgress .progress-bar');
+            let statsDiv = document.querySelector('#clientTransferProgress .transfer-stats');
+            document.getElementById('clientTransferProgress').style.display = 'block';
+
             client.on('open', function () {
-                clientStatusEl.innerText += 'Connected to host.\n';
+                startTime = Date.now();
+                appendClientStatus('Connected to host.');
 
                 // Send file metadata
                 var metadataMessage = {
@@ -270,14 +332,30 @@
                         chunkData: chunkArray
                     };
                     client.send(JSON.stringify(chunkMessage));
-                    clientStatusEl.innerText += 'Sent chunk ' + (chunkIndex + 1) + '/' + totalChunks + '\n';
+                    appendClientStatus('Sent chunk ' + (chunkIndex + 1) + '/' + totalChunks);
+
+                    sentBytes += chunkData.byteLength;
+
+                    const progress = (chunkIndex + 1) / totalChunks * 100;
+                    const elapsedTime = (Date.now() - startTime) / 1000;
+                    const speed = sentBytes / elapsedTime;
+                    const remainingBytes = file.size - sentBytes;
+                    const estimatedTimeRemaining = remainingBytes / speed;
+
+                    progressBar.style.width = `${progress}%`;
+                    statsDiv.innerHTML = `
+                        Sent: ${formatBytes(sentBytes)} / ${formatBytes(file.size)}<br>
+                        Speed: ${formatBytes(speed)}/s<br>
+                        Elapsed: ${formatTime(elapsedTime)}<br>
+                        Remaining: ${formatTime(estimatedTimeRemaining)}
+                    `;
 
                     chunkIndex++;
                     offset += chunkSize;
                     if (offset < file.size) {
                         readNextChunk();
                     } else {
-                        clientStatusEl.innerText += 'File sent successfully.\n';
+                        appendClientStatus('File sent successfully.');
                         client.close();
                     }
                 };
@@ -292,8 +370,35 @@
             });
 
             client.on('error', function (error) {
-                clientStatusEl.innerText += 'Error: ' + error + '\n';
+                appendClientStatus('Error: ' + error);
             });
+        }
+
+        // Add transfer tracking functions
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatTime(seconds) {
+            if (seconds < 60) return `${Math.floor(seconds)}s`;
+            const minutes = Math.floor(seconds / 60);
+            seconds = Math.floor(seconds % 60);
+            return `${minutes}m ${seconds}s`;
+        }
+
+        // Update these functions to handle textarea scrolling
+        function appendHostStatus(text) {
+            hostStatusEl.value += text + "\n";
+            hostStatusEl.scrollTop = hostStatusEl.scrollHeight;
+        }
+
+        function appendClientStatus(text) {
+            clientStatusEl.value += text + "\n";
+            clientStatusEl.scrollTop = clientStatusEl.scrollHeight;
         }
     </script>
 </body>

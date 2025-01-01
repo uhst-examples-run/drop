@@ -9,6 +9,7 @@ You can see the example in action here: [UHST File Transfer Example](https://exa
 The application allows users to:
 
 - **Host Side**:
+
   - Create a UHST host.
   - Generate a QR code and a sharable link containing the `hostId`.
   - Receive files sent by clients.
@@ -26,6 +27,12 @@ The application allows users to:
 - **Joining a UHST Host**: Clients connect to the host using the provided `hostId`.
 - **Sending Messages**: Files are sent as messages, split into chunks to manage large files.
 - **Receiving Messages**: Host receives file chunks and reconstructs the original file.
+- **Real-time Progress Tracking**:
+  - Progress bar showing transfer completion percentage
+  - Transfer speed in bytes per second
+  - Elapsed time since transfer started
+  - Estimated time remaining
+  - Current transfer progress in bytes
 - **Disconnecting**: Closes the connection after the file transfer is complete.
 - **Plain JavaScript Implementation**: Uses vanilla JavaScript without any frameworks for simplicity.
 
@@ -83,22 +90,34 @@ The application allows users to:
 
 - **UHST Library**: Utilizes the UHST JavaScript library for peer-to-peer communication.
 - **File Chunking**:
-  - Files are split into smaller chunks (e.g., 64 KB) to avoid exceeding message size limits.
+
+  - Files are split into smaller chunks (16 KB) to avoid exceeding message size limits.
   - Chunks are sent sequentially to the host.
   - The host reconstructs the file from the received chunks.
+  - Progress is tracked in real-time for both sender and receiver.
 
 - **Binary Data Handling**:
+
   - Chunks are read and transmitted as binary data (`ArrayBuffer`).
   - This ensures accurate and efficient data transfer without the overhead of Base64 encoding.
+
+- **Progress Tracking**:
+
+  - Real-time calculation of transfer speed
+  - Accurate time estimation based on current transfer rate
+  - Visual progress bar using Bootstrap components
+  - Byte-level transfer progress monitoring
 
 - **User Interface**:
   - **Host Interface**:
     - Displays Host ID, QR code, and shareable link.
+    - Shows transfer progress with speed and time estimates.
     - Includes a "Copy URL" button for easy sharing.
     - Shows status messages for diagnostic purposes.
   - **Client Interface**:
     - Prompts the user to select a file.
-    - Displays status messages during the file transfer process.
+    - Displays transfer progress with speed and time estimates.
+    - Shows status messages during the file transfer process.
 
 ## Notes
 
