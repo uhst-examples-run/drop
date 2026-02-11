@@ -1,0 +1,28 @@
+{
+  "name": "drop",
+  "version": "1.0.0",
+  "description": "This example demonstrates how to create a UHST (User Hosted Secure Transmission) host, join a UHST host, send files in chunks, receive files, and disconnect. It uses plain old JavaScript for simplicity.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uhst-examples-run/drop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/uhst-examples-run/drop/issues"
+  },
+  "homepage": "https://github.com/uhst-examples-run/drop#readme",
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "babel-jest": "^30.2.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0"
+  }
+}
