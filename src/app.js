@@ -173,7 +173,7 @@ function setupClient(hostId) {
                     statsDiv.innerHTML = `
                         Sent: ${formatBytes(stats.sentBytes)} / ${formatBytes(stats.totalBytes)}<br>
                         Speed: ${formatBytes(speed)}/s<br>
-                        Elapsed: ${formatTime(elapsedTime)}<br>
+                        Elapsed: ${formatTime(estimatedTimeRemaining)}<br>
                         Remaining: ${formatTime(estimatedTimeRemaining)}
                     `;
                 },
