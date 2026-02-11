@@ -6,22 +6,20 @@ let uhstApi;
 
 function appendHostStatus(text) {
     if (hostStatusEl) {
-        hostStatusEl.value += text + "
-";
+        hostStatusEl.value += text + "\n";
         hostStatusEl.scrollTop = hostStatusEl.scrollHeight;
     }
 }
 
 function appendClientStatus(text) {
     if (clientStatusEl) {
-        clientStatusEl.value += text + "
-";
+        clientStatusEl.value += text + "\n";
         clientStatusEl.scrollTop = clientStatusEl.scrollHeight;
     }
 }
 
 function getParameterByName(name, url = window.location.href) {
-    name = name.replace(/[\[\]]/g, '\$&');
+    name = name.replace(/[\[\]]/g, '\\$&');
     const regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
         results = regex.exec(url);
     if (!results) return null;
