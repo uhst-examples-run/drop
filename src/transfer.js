@@ -123,10 +123,17 @@ export class FileSender {
                 return; // Success
             } catch (error) {
                 lastError = error;
-                this.onStatus(`Chunk ${ackIndex === -1 ? 'metadata' : ackIndex + 1} failed: ${error.message}`);
+                const isNetworkError = error.message.includes('fetch') || error.message.includes('Network') || error.message.includes('timeout') || error.message.includes('ACK timeout');
+                
+                this.onStatus(`Chunk ${ackIndex === -1 ? 'metadata' : ackIndex + 1} failed: ${error.message}${isNetworkError ? ' (will retry)' : ''}`);
+                
                 // If the client is closed, don't bother retrying
                 if (this.client.readyState === 'closed') {
                     throw new Error('Connection closed');
+                }
+                
+                if (!isNetworkError && attempt >= this.maxRetries) {
+                   throw error;
                 }
             }
         }
